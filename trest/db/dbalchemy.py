@@ -131,6 +131,10 @@ class DBConfigParser(object):
         except Exception as ex:
             SysLogger.warning("sqlalchemy not found,using default sqlalchemy configuration")
             config = _BASE_SQLALCHEMY_CONFIGURATION
+        # Remove keys unsupported by SQLAlchemy create_engine (e.g., encoding)
+        encoding_key = _SQLALCHEMY_PREFIX + 'encoding'
+        if encoding_key in config:
+            config.pop(encoding_key, None)
 
         poolclass_cfg = _SQLALCHEMY_PREFIX + 'poolclass'
         poolclass = config[poolclass_cfg] if poolclass_cfg in config else None
@@ -258,12 +262,18 @@ class SQLAlchemy(ConnBase):
         # 每一个engine都会有一个factory，感觉挺闹心，要是有10个engine。。就得10个factory，未来寻找一下全局只有一个factory的方案
         self._slave_tmp = None
         session_conf['query_cls'] = BaseQuery
+        # Remove kwargs that are invalid for modern SQLAlchemy create_engine
+        if 'encoding' in kwargs:
+            kwargs.pop('encoding')
         self._master_engine = engine_from_config(self.config, prefix=_SQLALCHEMY_PREFIX, url=master_url[0], **kwargs)
         self._master_session = create_session(self._master_engine, **session_conf)
         self._slaves_session = []
         self._slave_engine = []
 
         for slave in slaves_url:
+            # ensure same invalid kwargs are not passed to create_engine for slaves
+            if 'encoding' in kwargs:
+                kwargs.pop('encoding')
             slave_engine = engine_from_config(self.config, prefix=_SQLALCHEMY_PREFIX, url=slave, **kwargs)
             self._slave_engine.append(slave_engine)
             self._slaves_session.append(create_session(slave_engine, **session_conf))
